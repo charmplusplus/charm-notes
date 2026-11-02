@@ -1491,6 +1491,11 @@ grep for every side effect of its constructors/init functions — the
 cross-wiring they performed for OTHER actors is the part that breaks
 non-locally.
 
+Caveat (2026-11-01): "default-constructed, gid 0" holds only in
+error-checking builds. In production builds the gid is uninitialized, so
+`isZero()` cannot detect an unset proxy; see "A default-constructed
+group/nodegroup proxy is NOT null in production builds" below.
+
 ## Reconverse: Ccd periodic ticks SLOW under load; they never stop — do not trust sparse print points (2026-08-04, corrected same day)
 
 CORRECTION of this note's earlier version, which claimed a [threaded]
@@ -3365,3 +3370,27 @@ merge is a k-way merge of sorted lists: cost proportional to the entries,
 no allocation proportional to the keys (63bbf44 on the fork). Rule: check a
 reducer's cost against the key count at the target scale, not at the test
 scale where it was written.
+
+## A default-constructed group/nodegroup proxy is NOT null in production builds (2026-11-01)
+
+`CProxy_Group()` and `CProxy_NodeGroup()` call `_ck_gid.setZero()` only
+under `#if CMK_ERROR_CHECKING` (src/ck-core/charm++.h; CkGroupID in charm.h
+is a plain struct with no constructor; checked on recharm 01b5fd7bb). In a
+`--with-production` build the group id is whatever was in that memory, so
+`proxy.ckGetGroupID().isZero()` does not test for "unset". A class member
+or local `CProxy_X p;` left default-constructed and then used as a "null"
+sentinel looks set.
+
+Observed: a library (unionfind, paratreet2 FoF3) passed a default-constructed
+nodegroup proxy to mean "feature off". Each receiver tested `isZero()`, got
+false, and sent its work to that nonexistent group. Nothing crashed. The
+sends were counted for QD and never delivered, so the next `CkWaitQD` hung
+with every PE idle. Same symptom as the 2026-08-04 entry, but here the
+proxy was never meant to be used at all. Frontier, 2 nodes x 8 procs x 7
+PEs, reconverse; it reproduced on the first run (job 5820845).
+
+Fix: build a null proxy explicitly (`CkGroupID z; z.setZero(); CProxy_X(z)`)
+and keep an explicit bool for "feature on" rather than testing the proxy.
+Static-storage proxies are zero-initialized and happen to be safe. Locals
+and members are not. An error-checking build hides this bug, so gating
+there alone does not catch it.
