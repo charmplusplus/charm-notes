@@ -3452,3 +3452,26 @@ in two segments.
   seal after counting itself backs out and starts over in the new head.
 - Note for the test writer: `__builtin_popcountll` does not compile under
   MSVC on the Windows CI job; `std::bitset<64>(x).count()` is portable.
+
+## `[reductiontarget]` with a `CkReductionMsg*` parameter: the wrapper deletes the message (2026-11-02, objid #4123)
+
+Two new tests declared `entry [reductiontarget] void done(CkReductionMsg *m)`
+and ended `done` with `delete m`, the usual idiom for a message entry. The
+`redn_wrapper_done` that charmxi generates for a reductiontarget deletes
+`impl_msg` itself after calling the entry, so each reduction freed the
+message twice. Symptoms by platform: glibc aborted with `free(): double free
+detected in tcache 2` (linux-arm8 CI); macOS said nothing and the heap
+corruption surfaced as a segfault inside an unrelated handler
+(`invokeSourceCallback` from `CkRdmaDirectAckHandler`, darwin CI) or not at all
+(56 of 56 laptop runs passed). Two rules:
+
+- A reduction entry that takes a `CkReductionMsg*` is a plain message entry:
+  no `[reductiontarget]`, target it with
+  `CkCallback(CkIndex_Main::done(NULL), proxy)`, and delete the message in the
+  entry. `[reductiontarget]` is for marshalled parameters
+  (`void done(int n)`, `void done(int n, const double *v)`), where the wrapper
+  unpacks the data and owns the message.
+- A crash in a zero-copy or RDMA handler of a program that uses neither is
+  heap corruption from somewhere else; look for a double free or a write past
+  a buffer before suspecting the handler. Reproducing on Linux (glibc's tcache
+  check) finds a double free that macOS's allocator lets through.
