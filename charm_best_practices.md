@@ -3425,3 +3425,30 @@ cost is not relays withholding RTRs while busy.
 
 **Rule.** Above ~1 MB, split a broadcast into a few hundred KB pieces, or
 measure it on its own first. Its cost grows with tree depth times size.
+
+## A lock-free race that passes on the laptop fails on the CI runners: oversubscribe to reproduce (2026-11-02, objid PR 3)
+
+A segmented lock-free hash table (process-level location table, charm
+#4123) passed every local run at 8 PEs on the 8-core laptop, then failed
+on three of four CI platforms at 8 PEs. GitHub's macOS runners have 3
+cores and the Linux ones 4, so 8 PE threads are preempted in the middle
+of a probe-then-insert sequence, which widened a race the laptop never
+hit: a writer's search missed, another writer published a bigger segment,
+and the first writer's insert landed in the old segment, leaving the key
+in two segments.
+
+- To reproduce a CI-only concurrency failure locally, oversubscribe
+  deliberately: start more PEs than cores (`+pe 24` on 8 cores) AND run a
+  few `yes > /dev/null &` processes alongside. That combination hit the
+  race once in 10 runs; 12 runs at `+pe 8` and 4 at `+pe 16` without the
+  hogs did not. Kill the hogs with `pkill -9 yes` afterwards.
+- A "check for the key, then insert if absent" sequence against a
+  structure whose head can change between the check and the insert is a
+  duplicate-insert race, whatever the memory orders on the individual
+  atomics. The fix pattern that keeps reads lock-free: inserters count
+  themselves in the current segment before the check (seq_cst), the
+  grower seals the segment (seq_cst exchange) and waits for the count to
+  reach zero before publishing the new one; an inserter that sees the
+  seal after counting itself backs out and starts over in the new head.
+- Note for the test writer: `__builtin_popcountll` does not compile under
+  MSVC on the Windows CI job; `std::bitset<64>(x).count()` is portable.
