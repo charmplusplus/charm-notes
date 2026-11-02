@@ -3394,3 +3394,34 @@ and keep an explicit bool for "feature on" rather than testing the proxy.
 Static-storage proxies are zero-initialized and happen to be safe. Locals
 and members are not. An error-checking build hides this bug, so gating
 there alone does not catch it.
+
+## Large nodegroup broadcasts on reconverse: chunk them (2026-11-02)
+
+**Observed.** Frontier, charm `recharm` (charm#4119, reconverse c9d8d2e,
+LCI 1287c59c), 128 nodes x 8 processes x 7 PEs (1,024 processes). A
+4.46 MB marshalled nodegroup broadcast plus an empty reduction, with
+nothing done on receipt, took **53-73 ms**; an empty broadcast plus
+reduction took 0.7-0.8 ms. At 2 nodes (16 processes) the same 4.16 MB
+took 6-7 ms. (paratreet2 FoF3 `FOF_LC_PROBE`, job 5834408.)
+
+**Mechanism (code, not separately timed).** Reconverse relays a node
+broadcast down an arity-4 spanning tree rooted at the sender
+(`src/collectives.cpp`, `CmiNodeBcastForward`; the arity is
+`CMK_SPANTREE_MAXSPAN`), about 5 levels at 1,024 processes. Each relay
+forwards only after the whole message has arrived, and copies it once per
+child (`CmiSyncNodeSend` = `CmiAlloc` + memcpy).
+Large messages go LCI rendezvous (RTS -> RTR -> RDMA write). Why the
+per-level cost is ~10+ ms for 4.46 MB is not measured.
+
+**What fixed it.** Sending the same payload as ~256 KB broadcasts (16-18
+messages) let the tree levels pipeline. The application's whole
+broadcast-and-install phase went 0.082 -> 0.023 s, identical over 3 reps.
+Receivers must tolerate out-of-order chunks; see paratreet2
+`CacheManager::recvStarterChunk` for an in-order install on a nodegroup.
+
+**Ruled out.** Polling the network (`CmiNetworkProgress`) every ~0.4 ms
+while the receiving PE processed the message made no difference. So the
+cost is not relays withholding RTRs while busy.
+
+**Rule.** Above ~1 MB, split a broadcast into a few hundred KB pieces, or
+measure it on its own first. Its cost grows with tree depth times size.
