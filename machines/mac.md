@@ -205,6 +205,11 @@ reconverse is `lcrun -n <procs> env DYLD_LIBRARY_PATH=<build>/lib ./app
   processes accumulate: `pkill -9 -f <app>; pkill -9 -f charmrun`, then
   check `uptime` before trusting any timing (load averaged 192 once from
   accumulated orphans).
+- `pkill -f <name>` matches any command line containing the name: on
+  2026-11-02 an agent's cleanup `pkill -9 -f migration` killed Google
+  Drive's crashpad_handler (its command line contains "migration").
+  Anchor the pattern to the test binary, e.g. `pkill -9 -f "[.]/migration"`
+  or `pkill -x migration`, and list the binaries explicitly.
 
 ## macOS platform hazards (details in
 ~/software/charm-notes/charm_best_practices.md)
