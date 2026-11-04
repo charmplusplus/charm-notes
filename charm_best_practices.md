@@ -3505,3 +3505,27 @@ and never printed. What worked:
 - Costs on an M-series laptop (TLC 2.20, 3 workers): 1.5M states with
   liveness about 30 min, 56M states safety-only about 25 min; `-deadlock`
   is required when quiescence is a legitimate final state.
+
+## Reconverse does not keep per-sender order; say the order you need (2026-11-04, recharm)
+
+- Two messages from one PE to one PE can be processed in either order on
+  reconverse, even without `+randomized_msgq`. Every PE thread of a process
+  polls the network, and the thread that polls a message pushes it into the
+  destination PE's queue (`CommRemoteHandler` -> `CmiPushPE`). That queue
+  (moodycamel) is FIFO only per pushing thread. Classic happened to keep the
+  order: one comm thread per process pushed into a single FIFO per PE.
+- This is by design (Kale, 2026-11-04): reconverse does not pay for per-pair
+  ordering, as MPI does. Code that needs an order must state it.
+- Two hidden dependences found the same day: CkMulticast's retire and
+  retrieveCookie messages (charm #4032, fixed in #4131 by doing both in one
+  message), and AMPI's MPI_Init creating a group and then two arrays whose
+  constructors use it (charm #4137, fixed with
+  `CkEntryOptions::setGroupDepID` on the array `ckNew` calls).
+- Groups created during start-up (main-chare constructors) are safe:
+  `_processBufferedBocInits` creates them in group-number order after every
+  start-up message has arrived. Groups and arrays created later are ordinary
+  broadcasts with no order between them. Use a group dependence when one
+  object's constructor uses another object created just before it.
+- Finding these: run the test under `+randomized_msgq +randomized_seed S`
+  with several seeds, at 2 or more processes with 2 or more PEs each. The AMPI
+  case failed in 25 of 30 seeds and in 0 of 230 plain runs.
