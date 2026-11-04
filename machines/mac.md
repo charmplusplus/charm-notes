@@ -273,3 +273,17 @@ stops the prompt. Headless Tk tests should run with
 `faulthandler.dump_traceback_later(N, exit=True)` so a hang shows its
 stack instead of leaving a dialog on the screen, and Tk roots must stay
 referenced until interpreter shutdown.
+
+## Spotlight no longer indexes ~/software (2026-11-04)
+
+Every rebuild of a charm tree writes hundreds of object files and Spotlight
+indexed them all: during parallel builds five `mdworker_shared` processes ran at
+15-20% each and the 1-minute load average went to 60-120 on top of the compile.
+Kale excluded `/Users/kale/software` in System Settings > Spotlight > scroll
+below the "Search results" list > **Search Privacy...** (the former Privacy tab;
+on macOS 15.7 it is a small button at the bottom of the pane) and the index
+dropped to zero items within a minute. Command-line routes do not work for a
+folder on the boot volume: `mdutil -i off <path>` takes a volume, not a folder;
+`.metadata_never_index` is ignored there; a `.noindex` suffix would break the
+absolute paths the worktrees use. Check with
+`mdfind -onlyin ~/software 'kMDItemFSName == "*"' | head` (empty = excluded).
