@@ -316,3 +316,23 @@ verification job here. Use `-p cpu` for the second job (it queued at once,
 23109902) or coordinate. Also: a `+pe` build against a reconverse pin before
 #294 (e7e6bba23) prints no stack trace on CmiAbort; the trace arrives with the
 pin bump, so its absence is not a build defect.
+
+## MPI programs (Cray MPICH) need `srun --mpi=cray_shasta` (2026-11-03)
+
+Under `srun --mpi=pmix` (the site default) and `--mpi=pmi2`, a Cray MPICH
+9.1.0 program starts every rank as its own 1-rank MPI job, with no error:
+an MPI hello probe saw world size 4 on 0 of 4 ranks under pmix and pmi2, and
+on 4 of 4 under cray_shasta (job 23492866). So any reconverse program that
+also calls MPI (MPI interop, `CharmLibInit`) is launched with
+`--mpi=cray_shasta`; the "use pmix" rule above is for programs that do not
+call MPI. Cray MPICH has no `mpirun`/`mpiexec`; srun is the only launcher.
+Related facts from the same runs:
+- Cray MPICH links no hwloc, and reconverse uses the system
+  `libhwloc.so.15` (2.x), so Anvil's hwloc 1.11-vs-2.5 clash does not occur.
+- In a reconverse build, `liblct.so` resolves `PMI_Init`/`PMI2_Init` to
+  `/opt/cray/pe/lib64/libpmi.so.0`/`libpmi2.so.0`, so `LCT_PMI_BACKEND=pmi1`
+  or `pmi2` works under `--mpi=cray_shasta`.
+- MPICH and LCI share the CXI NIC in one process with only `FI_PROVIDER=cxi`
+  and `LCI_NETWORK_BACKENDS=ofi` set.
+- cpu-interactive: MaxNodes=4, MaxTime=1h; a 45-run 2-node matrix took about
+  a minute. Scripts: /work/hdd/mzu/lkale/mpiinterop/.
