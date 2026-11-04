@@ -336,3 +336,15 @@ Related facts from the same runs:
   and `LCI_NETWORK_BACKENDS=ofi` set.
 - cpu-interactive: MaxNodes=4, MaxTime=1h; a 45-run 2-node matrix took about
   a minute. Scripts: /work/hdd/mzu/lkale/mpiinterop/.
+
+## Several LCI devices on CXI; srun in a read loop (2026-11-03)
+
+`+lci_ndevices` 1, 2 and 4 all work on CXI with only `FI_PROVIDER=cxi` and
+`LCI_NETWORK_BACKENDS=ofi`: the full charm `tests/charm++/zerocopy` suite and a
+2 GB `large_p2p` put pass on 2 nodes for reconverse 09d1279 (#315) and d98af57
+(#317) (jobs 23496944, 23497186; scripts in /work/hdd/mzu/lkale/zc-devices/).
+Cross-node pingpong round trip is about 140 us at 1 MB and 1.75 ms at 16 MB.
+charm's pingpong at 16 MB with 200 iterations needs more than 200 s; use 100.
+In a job script, `srun` inside `while read ...; done <<< "$LIST"` reads stdin
+and swallows the rest of the list, so only the first item runs: give each
+`srun` `< /dev/null`.
