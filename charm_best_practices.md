@@ -3475,3 +3475,33 @@ corruption surfaced as a segfault inside an unrelated handler
   heap corruption from somewhere else; look for a double free or a write past
   a buffer before suspecting the handler. Reproducing on Linux (glibc's tcache
   check) finds a double free that macOS's allocator lets through.
+
+## TLA+/TLC on a runtime protocol: one violation hides the others (2026-11-03, objid #4123)
+
+TLC stops at the first state that violates an invariant. When several
+orderings break the same invariant, the shortest one is reported and the
+rest stay hidden until it is excluded. On the process-level location table
+of charm PR #4123, `HolderEntryExact` (the holder's process entry names the
+holder) was violated in 6 steps by a late death notice clearing a re-created
+entry; the independent model of the same code found a second, 7-step ordering
+(a stale higher-epoch update of a dead life overwriting the re-created
+element's own entry) that this model had in its state space from the start
+and never printed. What worked:
+
+- Split a failing invariant into weaker forms that exclude the known
+  ordering (here `HolderEntryNotStale`: the entry, *when it has a location*,
+  is the holder's) and rerun; each weaker form surfaces the next ordering.
+  Liveness-only configs (no `INVARIANT` line) do the same for an invariant
+  violation that would otherwise stop the run.
+- Model the fix as the mechanism actually implemented, behind a constant
+  (`Fix = TRUE/FALSE`), not as an oracle. An oracle (a life tag on every table
+  entry, "newer life always wins") passed everything and hid three rules the
+  real code needed (own-write protection, by-id drop in the home's process,
+  older-than-record drop), each found by rerunning the death configurations
+  against the implemented rules.
+- Reconverse delivers messages in any order, so the network is a set, not a
+  queue; a messages-as-set model then needs every discriminating field
+  (sender PE, epoch, life) on the message, or two distinct messages merge.
+- Costs on an M-series laptop (TLC 2.20, 3 workers): 1.5M states with
+  liveness about 30 min, 56M states safety-only about 25 min; `-deadlock`
+  is required when quiescence is a legitimate final state.
