@@ -52,6 +52,21 @@ Both hazards are written up below. Also available: `gcc/{8.4.1,10.2.0,14.2.0}`,
 `openmpi/{3.1.6,4.1.6}`. Only `hwloc/1.11.13` is offered (fine — reconverse
 has an explicit pre-2.0 API branch).
 
+**AMPI builds: unload `openmpi` first, or set `CC=gcc CXX=g++` (2026-11-05).**
+The default `openmpi/4.0.6` module exports `CC=mpicc CXX=mpiCC FC=mpif90`,
+and `./build AMPI reconverse-linux-x86_64` takes them: CMake then links
+`libreconverse.so`, `liblci.so` and `liblct.so` against `libmpi.so.40` and
+`libmpi_cxx.so.40`. Every AMPI program built from that tree aborts at start
+with "AMPI_Initialized> AMPI has not been initialized!": the Open MPI C++
+library's load-time constructor (`MPI::Intracomm::Intracomm`) calls
+`MPI_Initialized`, the dynamic linker resolves that name to AMPI's own
+function, and AMPI has not started yet. The build itself reports success.
+Check with `ldd <build>/lib/libreconverse.so | grep mpi` (must print nothing);
+fix with `module unload openmpi` or `export CC=gcc CXX=g++ FC=gfortran
+F77=gfortran` before building, and rebuild with `--force`. Plain charm++
+builds carry the same NEEDED entries but do not abort, so the trap shows only
+with AMPI.
+
 **MPI programs: reconverse must use Open MPI's hwloc, not the `hwloc` module (2026-11-03).** `openmpi/4.0.6` links hwloc 2.5.0 (`/apps/spack/anvil/apps/hwloc/2.5.0-gcc-11.2.0-zzxt6un/lib/libhwloc.so.15`), while `module load hwloc` gives hwloc 1.11.13 (`libhwloc.so.5`). A reconverse built against the module and linked into an MPI program loads both libraries. Their unversioned `hwloc_*` symbols collide, so Open MPI's `opal_finalize -> hwloc_topology_destroy` runs the 1.11 code on a 2.5 topology and every rank segfaults inside `MPI_Finalize`. Charm++ works until then, and the crash also discards buffered stdout. For MPI interop or any MPI-linked Charm++ program, configure with `-DHWLOC_ROOT_DIR=/apps/spack/anvil/apps/hwloc/2.5.0-gcc-11.2.0-zzxt6un -DHWLOC_INCLUDE_DIR=<that>/include -DHWLOC_LIBRARY=<that>/lib/libhwloc.so -DRECONVERSE_ENABLE_CPU_AFFINITY=ON` and do not `module load hwloc` at run time. Check with `ldd <binary> | grep hwloc`: it must show only `libhwloc.so.15`. A reconfigure in place must pass all three HWLOC variables, because CMakeCache keeps the old ones. Related: under `srun --mpi=pmix`, Open MPI 4.0.6's `MPI_Init` fails ("psec: munge" component not found) unless `PMIX_MCA_psec=native` is exported.
 
 For a CUDA build these two loads are not enough and this order does not work:
