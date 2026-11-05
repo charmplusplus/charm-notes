@@ -287,3 +287,14 @@ folder on the boot volume: `mdutil -i off <path>` takes a volume, not a folder;
 `.metadata_never_index` is ignored there; a `.noindex` suffix would break the
 absolute paths the worktrees use. Check with
 `mdfind -onlyin ~/software 'kMDItemFSName == "*"' | head` (empty = excluded).
+
+## AMPI thread migration across processes cannot run on this Mac (2026-11-05)
+
+Any multi-process run (lcrun -n 2) in which migratable threads move between
+processes or resume from a checkpoint aborts with `Isomalloc> Cannot resume a
+migratable thread in this process: <program> is loaded at 0x... here but was at
+0x... in the process that packed the thread`. macOS address-space layout
+randomization loads the program at a different base in each process, and there
+is no `setarch -R` equivalent (Linux CI uses `setarch $(uname -m) -R`). Seen
+with examples/ampi/Cjacobi3D `jacobi.pup ... +balancer RotateLB`, 8 of 8 runs.
+Run such tests in one process (`+pe N`, migration between PEs works) or on Anvil.
