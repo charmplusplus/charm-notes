@@ -3529,3 +3529,30 @@ and never printed. What worked:
 - Finding these: run the test under `+randomized_msgq +randomized_seed S`
   with several seeds, at 2 or more processes with 2 or more PEs each. The AMPI
   case failed in 25 of 30 seeds and in 0 of 230 plain runs.
+
+## Tests that pass without testing, and defects classic hid (2026-11-06, recharm)
+
+- `$(call run, ...)` in a test or example Makefile expands to nothing unless
+  the Makefile includes `common.mk`, and `-include` of a wrong path is
+  silent. Such a `make test` compiles, prints its banner and exits 0
+  (examples/charm++/allGather did this; AMPI-interop and cuda/stencil2d had
+  the path one level off). Check that every include path resolves, and that a
+  program aborts on a wrong result instead of printing a message.
+- A `CkNcpyBuffer` that several transfers read must be `CK_BUFFER_NODEREG`,
+  deregistered once by its owner after the last transfer (manual, "De-registration
+  modes"). With the default `CK_BUFFER_DEREG`, reconverse over LCI segfaults in
+  `CommBackendLCI::deregisterMemory` across processes. Classic netlrts passed
+  because its deregistration does nothing, so a 2-process run on reconverse is
+  the check.
+- Comparing with classic separates regressions from old defects: run the same
+  test on both. Classic's randomized scheduler queue needs its own build:
+  `./build charm++ netlrts-darwin-arm8 smp --with-production
+  --enable-randomized-msgq --with-prio-type=int` (no seed option; it is always
+  on). CkMulticast's root-migration defects (charm #4132 items 1, 3, 8) are in
+  code both lines share; item 8 hangs every run on recharm and 1 in 10 on
+  classic with the randomized queue, item 1 the reverse.
+- When a section reduction hangs, have every element print its state at the
+  watchdog (rounds received, cookie redNo): all members having contributed
+  means the reduction is stuck inside CkMulticast, not a lost multicast.
+  ckmulticast.C is compiled into libck (`cmake --build <build> --target ck`),
+  not into libmoduleCkMulticast.
