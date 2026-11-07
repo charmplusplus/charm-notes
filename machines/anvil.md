@@ -1068,3 +1068,24 @@ took 309 s on the login node. Also: the project file quota was 61% on
 2026-10-28, no longer full; `debug` (8 cores, 30 min) started after 30-70 min,
 `shared` estimated a two-week wait. Reconverse AMPI checkpoint/restart clone and
 logs: `/anvil/projects/x-asc050025/x-lkale/software/ampi-aslr`.
+
+## Classic charmrun `++local` fails on compute nodes with "posix_spawn failed: Bad address" (2026-11-06)
+
+Seen while sweeping tests/charm++/groupdep_creator on classic
+netlrts-linux-x86_64-smp in 2-CPU Slurm jobs. Most
+`./charmrun ++local ./app +p4 ++ppn 2` launches failed before the node
+program started: `posix_spawn failed: Bad address`. strace showed charmrun
+passing the node program an `envp` array that was mostly garbage (its own
+option-table strings and raw pointers), so `execve` returned EFAULT. Anvil
+puts XALT in `LD_PRELOAD`, and charmrun turns address randomization off
+before it spawns. The combination `++va-randomization` plus `LD_PRELOAD`
+unset made every launch work; the two were not tested separately. Also,
+a 4-PE run in a 2-CPU job needs `+setcpuaffinity` or classic aborts with
+"Multiple PEs assigned to same core". Working line:
+
+    unset LD_PRELOAD
+    ./charmrun ++local ++va-randomization ./app +setcpuaffinity +p4 ++ppn 2
+
+`++local` is meant for laptops; the defect is noted for a possible fix
+when classic in-memory checkpoint (syncft) testing needs it, and otherwise
+left alone. Sweep scripts and outputs: /anvil/scratch/x-lkale/classic-epoch/.
