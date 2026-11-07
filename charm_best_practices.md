@@ -3600,3 +3600,16 @@ Found while designing a single runtime-generic message type for dynamic
   element list, has no `pup` case (ckcallback.C:461-520 aborts) and is refused
   by `CkStartCheckpoint` (ckcheckpoint.C:815); route section-targeted callbacks
   through a group entry on the root PE instead.
+
+## A `./build charm4py` build directory cannot link ordinary Charm++ programs (2026-11-07, charm4py-thin step 0)
+
+`./build charm4py reconverse-darwin-arm8 ...` produces a libcharm that defines
+`_createTraces` inside `libck.a` (src/ck-core/init.C:94-108, under `CMK_CHARM4PY`),
+because the shared library for Python has no charmc-generated moduleinit to define it.
+Linking any normal Charm++ program (for example `benchmarks/charm++/pingpong`) with
+that build's `charmc` fails with `duplicate symbol _createTraces(char**)`: charmc's
+generated moduleinit defines it too. To get a C++ comparison number on the same source
+and flags, build a second directory with the `charm++` target
+(`./build charm++ <triplet> --with-production` into a different `--destination`) and
+link there. On this Mac the two builds of the same source took 106 s (charm4py target,
+through pip) and 89 s (charm++ target).
