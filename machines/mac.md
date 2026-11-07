@@ -55,6 +55,11 @@ project status out of this file; it belongs in per-project memory.
   no longer wins.
 - Stale entry in `~/.cshrc` path: `~/software/charm/net-darwin-x86-smp/bin`
   (x86 charm, long gone).
+- `~/.cshrc` sets `CHARMC=/Users/kale/software/charm/bin/charmc` (the OLD
+  non-production build), and Claude sessions started from a Terminal window
+  inherit it (found 2026-11-06). A Makefile with `CHARMC ?= ...` silently
+  builds against that old build; tests/ and examples/ use plain `CHARMC =`, so
+  they are safe. Check `echo $CHARMC` before trusting a build that uses `?=`.
 
 ## Charm++ / Converse installations
 
