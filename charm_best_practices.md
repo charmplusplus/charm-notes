@@ -3556,3 +3556,22 @@ and never printed. What worked:
   means the reduction is stuck inside CkMulticast, not a lost multicast.
   ckmulticast.C is compiled into libck (`cmake --build <build> --target ck`),
   not into libmoduleCkMulticast.
+
+## MPICH test programs keep their rank in globals: run them one rank per process, or build with -pieglobals (2026-11-06, AMPI)
+
+AMPI ranks in one process share the program's globals unless the program is
+built with a privatization method. Many MPICH test programs keep `rank`,
+`size`, `count` and their error counter in file-scope globals and build
+every input from `rank` (coll/allred.c: `in[i] = i + rank`, `rank & 1`,
+`rank == 1`, MAXLOC's expected location). With several ranks in a process the
+last call to MPI_Comm_rank wins, ranks contribute inputs computed with another
+rank's number, and the program reports thousands of wrong results that look
+like a reduction bug. Measured on Mac and Anvil at recharm 2a2d1ac67: 4 ranks
+in 1 process "Found 17920 errors", 2 processes "Found 8960 errors", 4 processes
+"No Errors"; built with `-pieglobals` (Linux), 4 ranks in 1 or 2 processes
+"No Errors" 8 of 8. The error lines are stamped with the shared `rank`, so the
+rank they name is not the rank that found them, and the program exits 0 even
+when it reports errors. Before blaming the library, run the test one rank per
+process (`ampirun --procs N` or `lcrun -n N ... +vp N`) or privatized. The same
+cause is behind coll/allred2's "mis-matched client callbacks" abort (harness
+static state shared by the ranks).
