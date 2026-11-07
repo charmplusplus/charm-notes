@@ -3575,3 +3575,28 @@ when it reports errors. Before blaming the library, run the test one rank per
 process (`ampirun --procs N` or `lcrun -n N ... +vp N`) or privatized. The same
 cause is behind coll/allred2's "mis-matched client callbacks" abort (harness
 static state shared by the ranks).
+
+## One message cannot be both a CkMulticast message and a zero-copy message (2026-11-06, charm4py-thin design)
+
+Found while designing a single runtime-generic message type for dynamic
+(binding-defined) entry methods on recharm `2a2d1ac67`:
+
+- `CkMulticastMgr::sendToSection` writes the section cookie and ep into the
+  first bytes of the user message (`msg->ep = ep; msg->_cookie = s;`,
+  ckmulticast.C:915-958), so a message sent through CkMulticast must start
+  with `CkMcastBaseMsg`; the manual says so and adds that parameter
+  marshalling therefore cannot be multicast (doc/charm++/manual.rst:7015-7032).
+- The zero-copy receive code casts the user message to `CkMarshallMsg` and
+  parses the `CkNcpyBuffer` descriptors from the start of `msgBuf`
+  (ckrdma.C:721, 733, 745, 846, 952, 1119, 1164; ckrdmadevice.C:718, 733), so a
+  message carrying nocopy descriptors must have the `char *` at offset 0 that
+  `CkMarshallMsg` has.
+- Both subsystems claim offset 0 of the user message, so no one layout serves
+  both. A library that wants both uses two message types and tells them apart
+  by `env->getMsgIdx()`. Do not rely on `CkMcastBaseMsg::checkMagic` to detect
+  a multicast delivery: it returns true unconditionally in production builds
+  (cksection.h:78-84).
+- Related: a `CkCallback` to a section (`bcastSection`) holds pointers to the
+  element list, has no `pup` case (ckcallback.C:461-520 aborts) and is refused
+  by `CkStartCheckpoint` (ckcheckpoint.C:815); route section-targeted callbacks
+  through a group entry on the root PE instead.
