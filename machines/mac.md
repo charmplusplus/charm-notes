@@ -303,3 +303,14 @@ randomization loads the program at a different base in each process, and there
 is no `setarch -R` equivalent (Linux CI uses `setarch $(uname -m) -R`). Seen
 with examples/ampi/Cjacobi3D `jacobi.pup ... +balancer RotateLB`, 8 of 8 runs.
 Run such tests in one process (`+pe N`, migration between PEs works) or on Anvil.
+
+## Crash dialogs from aborted runtime tests (2026-11-07)
+
+Every Charm++ or charm4py run that ends in `CkAbort`/`CmiAbort` calls `abort()`,
+and macOS shows a "<app> quit unexpectedly" dialog per crash that someone has to
+click away (five in a few minutes while an agent debugged a Python extension).
+`defaults write com.apple.CrashReporter DialogType none` (user-level, no sudo)
+suppresses the dialogs; reports still land in `~/Library/Logs/DiagnosticReports/`
+(`*.ips`, JSON: a header line then the body with `faultingThread` and `frames`).
+Set on this Mac 2026-11-07 21:41 PST at Kale's request; restore with
+`defaults delete com.apple.CrashReporter DialogType`.
