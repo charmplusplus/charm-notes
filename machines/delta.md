@@ -196,6 +196,22 @@ bare-binary single-process tests on the login node and only the
 `srun`-launched multi-process ones inside an allocation. Observed 2026-09-16
 (job 22125300 hung this way).
 
+## A CUDA build runs nowhere without a GPU, not even single-process (2026-11-08)
+
+Any binary of a `reconverse-linux-x86_64 cuda` build, including a Python
+extension that links its libcharm, aborts at startup on the login node:
+`_deps/lci-src/src/accelerator/accelerator_cuda.cpp:169: 'cuInit(0)'`
+failed. LCI is built with its CUDA accelerator and initializes the driver
+before anything else runs, so the "single-process bare binary on the login
+node" rule above holds only for CPU builds. Every smoke test of a CUDA
+build, even `./app +pe 1`, goes into an allocation (`srun -n 1`). Also:
+a build made with `./build charm4py ...` defines `CMK_CHARM4PY`, under which
+every charmxi program aborts with "No callback for CkRegisterMainModule"
+(init.C); C++ tests need a separate `./build charm++ ...` of the same source,
+with its `lib/` first on `LD_LIBRARY_PATH` (which outranks the binaries'
+RUNPATH). Seen while bringing the thin charm4py up on Delta, jobs 23670123
+and 23670313.
+
 ## Classic Charm++ (ofi, Slingshot) build and launch (2026-09-23)
 
 Target that works: `./build charm++ ofi-crayshasta smp cxi -j16 --with-production`
