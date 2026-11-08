@@ -215,6 +215,13 @@ reconverse is `lcrun -n <procs> env DYLD_LIBRARY_PATH=<build>/lib ./app
   Drive's crashpad_handler (its command line contains "migration").
   Anchor the pattern to the test binary, e.g. `pkill -9 -f "[.]/migration"`
   or `pkill -x migration`, and list the binaries explicitly.
+- `pkill -f "python.*test_x"` does NOT match a Python run started from the
+  framework interpreter: the process command line is
+  `/Library/Frameworks/Python.framework/.../Python.app/Contents/MacOS/Python tests/...`
+  with a capital P, so a lowercase `python` pattern matches nothing and killed
+  runs leave orphans (three charm4py tests ran for 25 minutes on 2026-11-08 this
+  way). Use `pkill -9 -f "Python .*test_x"` or `pkill -9 -i -f "python.*test_x"`,
+  and check `ps aux | grep -i "[p]ython .*tests"` after a batch of timed runs.
 
 ## macOS platform hazards (details in
 ~/software/charm-notes/charm_best_practices.md)
