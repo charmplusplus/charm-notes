@@ -3613,3 +3613,65 @@ and flags, build a second directory with the `charm++` target
 (`./build charm++ <triplet> --with-production` into a different `--destination`) and
 link there. On this Mac the two builds of the same source took 106 s (charm4py target,
 through pip) and 89 s (charm++ target).
+
+## A macro that opens a block instead of a begin/end pair (2026-11-12, ckcoro PR #4231)
+
+A region of a function that a macro set must bracket (here, the restart `switch`
+of a migratable coroutine whose `case __LINE__:` labels sit at each wait) was
+first written as a pair, `CK_COROUTINE() ... CK_COROUTINE_END()`. Kale asked
+what in the design required a pair when plain C++ coroutines need nothing of
+the kind. The answer was: the switch must be in the user's function because the
+labels are, so a guard object cannot open or close it; but the closing half can
+be the user's own brace. The macro is now object-like and the user supplies the
+block:
+
+```c++
+#define CK_MIGRATABLE  ::ck::coro::frame_guard ck_frame_; switch (ck_frame_.site()) default: case 0:
+CK_MIGRATABLE {            // expands to: guard; switch (site) default: case 0: { ... }
+  CK_WHEN(inbox::x());     // case __LINE__: do { note_site(...); co_await ...; } while (0)
+}
+```
+
+Points that made it work, each found by a ten-line probe before touching the
+library:
+- `default:` next to `case 0:` routes an unknown recorded site through the
+  block (the first `note_site` aborts with the mismatch) and keeps the end of a
+  value-returning coroutine unreachable, which silences clang's "does not return
+  a value in all control paths" when `co_return` is inside the switch.
+- The end-of-block check that `CK_COROUTINE_END()` used to do moved into the
+  guard's destructor (`restarting && site_ != 0 && !noted_`).
+- Registration that the begin macro did moved into the coroutine's
+  `promise_type`: C++20 passes `*this` and the arguments to a promise
+  constructor that accepts them, so the promise can register the owner before
+  the body runs. GCC deduces that owner parameter as a reference type
+  (`Jacobi&`) where clang deduces the class; a `requires` constraint written on
+  the deduced type then fails on GCC only, silently selecting the default
+  constructor. Strip with `std::remove_cv_t<std::remove_reference_t<T>>` before
+  constraining. Found by Linux CI, not on the Mac.
+- Two waits on one source line give `duplicate case value`, an explicable
+  compiler error; `__LINE__` was kept over `__COUNTER__` for readable abort
+  messages.
+
+The question "what are we doing that requires this" about the surface found a
+better design after the PR was open, with 39 minutes from go-ahead to push.
+
+## `git add -A <dir>` commits build products; add by explicit file list (2026-11-12)
+
+`git add -A src doc tests examples benchmarks` on a tree with built test
+programs committed about 100 MB of binaries and objects (the .gitignore does
+not cover every test directory). The commit had already been pushed. The
+repair was `git reset --soft` to the previous commit, re-adding the intended
+files by name, and `git push --force-with-lease`, done only with Kale's
+explicit permission. Before a commit that spans directories, `git status
+--short <dirs> | grep -v '^ M'` shows the untracked files it would take; add
+the source files by name.
+
+## Local passes of migration-at-a-wait tests are not evidence; the Linux jobs are (2026-11-12, ckcoro)
+
+A test that ported an SDAG conjunction as two consecutive waits with an unpupped
+member passed in dozens of runs on the Mac and failed on the first Linux CI run:
+on Linux the element migrates exactly between the two waits, on this Mac it
+never did. For any test whose correctness depends on where a migration lands
+relative to a suspension point, run it on Linux (CI or Anvil) before calling it
+green, or force the migration at the point under test (`+ck_fakemigrate` in
+ckcoro packs and unpacks at every wait).
