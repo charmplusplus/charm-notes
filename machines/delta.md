@@ -364,3 +364,18 @@ charm's pingpong at 16 MB with 200 iterations needs more than 200 s; use 100.
 In a job script, `srun` inside `while read ...; done <<< "$LIST"` reads stdin
 and swallows the rest of the list, so only the first item runs: give each
 `srun` `< /dev/null`.
+
+## /projects/mzu file-count quota (2026-11-11)
+
+The allocation quota on `/projects/mzu` counts FILES as well as bytes: soft
+750,000, hard 825,000, shared by every member. On 2026-11-11 it was at
+821,632 files (bytes at 412 G of 500 G, no problem) and a `git clone` of charm
+failed mid-checkout with `Disk quota exceeded`. `quota -s` shows both
+columns. A charm clone plus one build is about 40,000 files; a Python venv
+35,000; a pip cache 23,000. Check `quota -s` before cloning or building, and
+delete finished experiment trees (a cleanup of four old trees, 190,000
+files, took about 4 minutes on Lustre). `/work/nvme/mzu/<user>` has 3.4 M
+files of room and works for a throwaway build: set `WS` there and copy the
+environment file in. Lustre keeps atime here, so
+`find <dir> -type f -newerat <date>` tells whether a tree was read recently
+before deleting it.
