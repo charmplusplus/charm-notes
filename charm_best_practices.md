@@ -205,6 +205,18 @@ runtime-level work.
   +pe <total PEs> <args>`. `+pe` is total across processes. Single-process
   runs don't need lcrun.
 - Converse-only programs: `charmc -language converse++`.
+- A build dir's tests/ tree misses test directories added to the source tree
+  after configure (2026-11-12). The build dir's tests/ subdirectories (e.g.
+  `reconverse-darwin-arm8/tests/ampi/`) are real directories holding per-file
+  symlinks into the source tree, made when the build was configured. A new
+  `tests/ampi/<name>` that arrives later (a branch checked out or rebased onto)
+  is not there, so `make test` in the build's `tests/ampi` stops with
+  `<name>: No such file or directory` from `make -C`. Fix from the build dir:
+  `ln -s $PWD/../tests/ampi/<name> tests/ampi/<name>`, or reconfigure. List the
+  missing ones from the build dir with
+  `for n in $(cd ../tests/ampi && find . -mindepth 1 -maxdepth 1 -type d | sed 's|./||'); do [ -e tests/ampi/$n ] || echo missing $n; done`.
+  Seen with tests/ampi/neighbor, tests/ampi/comm_create_group and
+  tests/campi/neighbor.
 
 ## SMP correctness, registration & library-modernization patterns (2026-07)
 
@@ -3575,6 +3587,15 @@ when it reports errors. Before blaming the library, run the test one rank per
 process (`ampirun --procs N` or `lcrun -n N ... +vp N`) or privatized. The same
 cause is behind coll/allred2's "mis-matched client callbacks" abort (harness
 static state shared by the ranks).
+
+New AMPI tests fail the same way (2026-11-12). The new tests/ampi/neighbor kept
+its rank, size and error counter in file-scope globals, and every rank printed
+"rank 0" (the value written by whichever rank ran last) until the state moved
+into a struct passed to each function. The MPICH harness has the same defect in
+a static loop index (util/mtest.c `intraCommIdx`), which fails with several
+ranks per process (charm issue #4103 comments). Rule: a new AMPI test keeps
+per-rank state in locals or a struct, never in globals or statics, and is run
+with `+vp` greater than `+pe` (several ranks per process) to catch a global.
 
 ## One message cannot be both a CkMulticast message and a zero-copy message (2026-11-06, charm4py-thin design)
 
