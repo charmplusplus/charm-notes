@@ -3675,3 +3675,30 @@ never did. For any test whose correctness depends on where a migration lands
 relative to a suspension point, run it on Linux (CI or Anvil) before calling it
 green, or force the migration at the point under test (`+ck_fakemigrate` in
 ckcoro packs and unpacks at every wait).
+
+## Charm++ never checks that a reduction's contributions agree on the reducer; a hook-time registration misses a PE that gets no hook (2026-11-12, charm4py-thin PR review)
+
+- `CkReductionMgr::reduceMessages` sets `r = m->reducer` for each real message
+  and calls the reducer of the LAST one (ckreduction.C:849); CkMulticast uses
+  the FIRST (`rmsgs[0]->reducer`, ckmulticast.C:1465). Neither checks that the
+  others match. A wrapper reducer that some contributions use and others do
+  not (a header-carrying "shaped" reducer for ndim >= 2 arrays next to plain
+  `sum_double` for 1-D ones) therefore gives an order-dependent result: with
+  the plain reducer chosen, `SIMPLE_REDUCTION` takes `nElem` from `msg[0]`'s
+  length and reads that many elements from shorter messages (out-of-bounds
+  read, silent wrong values); with the wrapper chosen, it parses plain data as
+  its header. Measured on charm4py #323: (2, 3) and (6,) contributions of the
+  same six values summed to a 9-element array in one order and aborted with
+  "bad header (ndim 1072693248)" in the other (0x3FF00000 is the high word of
+  1.0). Any per-contribution choice of reducer type must be total over the
+  reduction, or the wrapper must cover every case a mix can produce.
+- A C `atexit` handler registered from the first runtime hook (to order it
+  after CUDA's teardown registration) never registers on a PE that gets no
+  hook: when `main` calls exit before PE 0's readonly broadcast is processed,
+  PEs other than 0 run no binding hook at all, not even `unpack_readonly`.
+  Keep an early registration as well; `atexit._run_exitfuncs` clears Python's
+  list, so the second run of the handler is a no-op (charm4py #324 review).
+- A test whose failure shows only in output ("Exception ignored in ...") passes
+  a harness that judges exit status (charm4py `auto_test.py`). Make the test
+  turn the symptom into a status, e.g. a `sys.unraisablehook` that records and
+  an atexit handler registered first that calls `os._exit(1)`.
