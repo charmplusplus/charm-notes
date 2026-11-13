@@ -117,6 +117,19 @@ runtime-level work.
   version. Also: reconverse at 1 process per node needs `+lci_ndevices 8` on
   message-heavy apps (ChaNGa 1x64: 0.60x speed without it).
 
+- **A ping-pong must carry the message size in both directions; a bandwidth
+  above the link's line rate means the benchmark is wrong (2026-11-13, Delta
+  A40).** `benchmarks/charm++/cuda/gpudirect/latency-persistent` never told PE 1
+  the size (`Block::size` uninitialised there; the receive callback of a
+  `CkDevicePersistent` put carries no length), so PE 1 replied with 0-byte puts
+  and "one-way" was (full put + empty put) / 2. Symptom: 64 MB in 1400 us
+  between two nodes, 48 GB/s on a 25 GB/s link; the corrected number is 3770 us
+  (17.8 GB/s), and a copy that verified every byte found the runtime correct.
+  Before believing a fast large-message number, compute bytes / time and compare
+  with the line rate: on Delta `lspci | grep -i cassini` and `cxi_stat` (link
+  speed `BS_200G`) show one 200 Gb/s Slingshot NIC per A40 node, 25 GB/s.
+  Anything faster is a benchmark defect, not a fast runtime.
+
 ## Debugging on macOS
 
 - **lldb strips DYLD_LIBRARY_PATH** (SIP): set it inside lldb with
