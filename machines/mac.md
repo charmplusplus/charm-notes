@@ -323,3 +323,15 @@ suppresses the dialogs; reports still land in `~/Library/Logs/DiagnosticReports/
 (`*.ips`, JSON: a header line then the body with `faultingThread` and `frames`).
 Set on this Mac 2026-11-07 21:41 PST at Kale's request; restore with
 `defaults delete com.apple.CrashReporter DialogType`.
+
+## Load spikes that are not Charm++ runs (2026-11-13)
+
+The 1-minute load reached 200-430 on a morning with no build or test from any session. Three causes, in order:
+the Storage page of System Settings left open (StorageManagementService and ApplicationsStorageExtension scanned
+the disk for over an hour, 3,000-5,000 small reads per second); one session's `lcrun -n 8 ... +pe 16` (16 busy
+workers on 8 cores, started without the load check; it held the lcrun lock, which does not check load); and a
+33 GB folder moved into iCloud Drive, which fileproviderd catalogued and Spotlight indexed, because the Spotlight
+exclusion of ~/software does not follow a folder moved out of it. Adding the iCloud folder to Spotlight > Search
+Privacy stopped the indexing within minutes. Activity Monitor shows little of this: disk waits raise the load
+without CPU, and every Claude session appears as `claude`; a session's process id is the name of its socket in
+/tmp/cc-socks, and Inspect > Open Files and Ports shows a run's working directory.
