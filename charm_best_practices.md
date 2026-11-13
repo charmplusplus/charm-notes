@@ -138,6 +138,17 @@ runtime-level work.
 - `!`-prefix shell in a Claude session has the user's login context but NO
   TTY: interactive sudo and passphrase-protected ssh keys fail there; use a
   real terminal for those.
+- **A hand-made timeout must not hold the output pipe** (2026-11-12,
+  coroutine-sdag review). macOS has no `timeout`, and a wrapper such as
+  `cmd & pid=$!; ( sleep N; kill -9 $pid ) & wd=$!; wait $pid; kill $wd`,
+  piped into `grep`, makes every run last the full N seconds: `kill $wd`
+  ends the subshell but not its `sleep`, which still holds the pipe, so
+  `grep` sees no end of input. Nine test runs of under a second each took
+  18 minutes this way. Redirect the watchdog's output away from the pipe
+  and kill its child after the run:
+  `( sleep N; kill -9 $pid ) >/dev/null 2>&1 </dev/null &` then
+  `pkill -P $wd; kill $wd`. The symptom is a wall time equal to the bound
+  for runs that print success.
 
 ## Runtime/scheduler lessons (reconverse era)
 
