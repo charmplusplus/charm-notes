@@ -3734,3 +3734,40 @@ ckcoro packs and unpacks at every wait).
   a harness that judges exit status (charm4py `auto_test.py`). Make the test
   turn the symptom into a status, e.g. a `sys.unraisablehook` that records and
   an atexit handler registered first that calls `os._exit(1)`.
+
+## Chare-array frameworks: charmxi and charmc facts met building graphTyles (2026-11-12)
+
+Found while writing a framework in which every algorithm is a chare array
+derived from one framework array (graphTyles stage A, reconverse and classic
+netlrts-smp builds).
+
+- **An abstract base array works.** Declare the base in its .ci with entry
+  methods but no constructor entry (`array [1D] GtKernel { entry void
+  gt_deliver(...); ... };`); its C++ class may then be abstract. Other modules
+  derive from it (`extern module kernel; array [1D] BfsKernel : GtKernel {
+  entry BfsKernel(Setup s); };`), and `CBase_BfsKernel(args)` forwards the
+  arguments to the base class constructor. Framework code invokes the base
+  entries on derived elements through a base proxy made from the derived
+  array id: `CProxy_GtKernel(aid)[i].gt_deliver(...)`. Declaring a
+  constructor entry in the base makes charmxi emit `new GtKernel()`, which
+  does not compile for an abstract class.
+- **Do not name an array constructor parameter `opts`.** charmxi adds a
+  `const CkArrayOptions &opts` parameter to the generated `ckNew`, and the
+  result is "redefinition of parameter 'opts'".
+- **For arrays, `CProxy_X::ckNew(args..., opts)` returns a `CkArrayID`**, not
+  a proxy.
+- **charmc searches `<charm>/include` before your `-I` directories**, and that
+  directory has generic names: its `topology.h` shadowed a project
+  `gt/topology.h` included from another directory. Include project headers
+  with a directory prefix (`#include "gt/x.h"`), and check a new header name
+  with `ls <build>/include/<name>`.
+- **charmc runs the C preprocessor over .ci files**, so an apostrophe in a `//`
+  comment gives "missing terminating ' character" warnings.
+- **Marshalled array parameters are aligned to their element size**
+  (`CK_ALIGN(impl_off, sizeof(T))` in the generated def.h), so `char
+  data[n]` promises only byte alignment. To receive structs in place,
+  declare `unsigned long long data[words]` and pack into whole words.
+- **Make every module's decl.h compile on its own.** A mainmodule's decl.h
+  includes those of its `extern module`s first, before anything the .C file
+  includes. Put the headers that declare a module's entry parameter types in
+  that module's .ci (`include "gt/args.h";`), not only in its .h.
