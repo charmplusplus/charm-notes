@@ -3784,3 +3784,16 @@ netlrts-smp builds).
   includes those of its `extern module`s first, before anything the .C file
   includes. Put the headers that declare a module's entry parameter types in
   that module's .ci (`include "gt/args.h";`), not only in its .h.
+- **Makefiles for charmc builds on macOS: no phony order-only prerequisite
+  shared by many targets.** GNU make 3.81, the make that ships with macOS,
+  never finishes a `-j` build in which many targets list one phony target as
+  an order-only prerequisite (`$(OBJ_DIR)/%.o: %.C | check-charmc`): after
+  that job ends, make spins at 100% CPU with no child process and no output
+  (`make -d` prints "The prerequisites of X are being made" in a loop).
+  Serial `make` works, so a test script that builds serially hides it. Do
+  the check in a function expanded at the start of each recipe instead:
+  `CHECK = $(if $(CHARMC),,$(error CHARMC is not set))` and
+  `\t$(CHECK)$(CHARMC) ...`. Also mark the generated `.decl.h` files
+  `.SECONDARY:`; otherwise make deletes them as intermediates after each
+  build, and objects that include another module's `.decl.h` fail to compile
+  after only one `.ci` file changes. (graphTyles, 2026-11-13.)
