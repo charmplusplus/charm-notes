@@ -208,6 +208,10 @@ reconverse is `lcrun -n <procs> env DYLD_LIBRARY_PATH=<build>/lib ./app
   produced spurious failures in IPC shared-memory setup and the LCI PMI
   bootstrap (load average 16-100); each reran clean alone. Give at most one
   agent an lcrun-running step at a time, or make the others wait.
+- The rule covers OTHER Claude sessions too: they share this laptop and do not
+  see each other's runs. On 2026-11-13 a graphTyles session started three lcrun
+  runs while an objid session's lcrun AMPI jobs were running. Before any lcrun,
+  check `pgrep -fl lcrun`; if another job is running, wait or ask Kale.
 - After any killed or timed-out multi-process run, orphaned node
   processes accumulate: `pkill -9 -f <app>; pkill -9 -f charmrun`, then
   check `uptime` before trusting any timing (load averaged 192 once from
