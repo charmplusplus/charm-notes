@@ -339,3 +339,8 @@ exclusion of ~/software does not follow a folder moved out of it. Adding the iCl
 Privacy stopped the indexing within minutes. Activity Monitor shows little of this: disk waits raise the load
 without CPU, and every Claude session appears as `claude`; a session's process id is the name of its socket in
 /tmp/cc-socks, and Inspect > Open Files and Ports shows a run's working directory.
+Moving data to iCloud Drive: pack many small files into archives first (one per folder, with a manifest of
+file counts) and move them in batches of about 2 GB, waiting for each batch to upload before evicting the
+local copies. ~/software/clusterFinding/upload-traces/upload.sh does this (PAUSE/STOP files, upload.log);
+33 GB in 85 archives went up in about 35 minutes on 2026-11-13. Each batch first reports "Couldn't access your
+iCloud account" for some files (server throttling); macOS retries and they complete.
