@@ -3797,3 +3797,14 @@ netlrts-smp builds).
   `.SECONDARY:`; otherwise make deletes them as intermediates after each
   build, and objects that include another module's `.decl.h` fail to compile
   after only one `.ci` file changes. (graphTyles, 2026-11-13.)
+
+## A relay protocol must forward along the tree it counts acknowledgements on; test at the depth it needs (2026-11-15, charm #4269)
+
+The zerocopy broadcast in `src/ck-core/ckrdma.C` counts acknowledgements on
+Charm++'s topology-aware node tree, while reconverse relayed the root's
+message to every node along its own 4-ary tree. A grandchild then read from
+and acked the root, and its parent in the Charm++ tree waited forever for
+that ack (hang; fixed by PR #4273, which sends along the tree the acks are
+counted on). It showed only when the tree has an intermediate node (2+ hosts
+x 2+ processes, or 6+ processes); CI's 1-2 process runs never build one.
+Test protocol code at a process count that gives the tree depth it needs.

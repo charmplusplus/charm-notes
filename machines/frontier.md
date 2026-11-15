@@ -40,6 +40,9 @@ clones there).
   (/lustre/orion/<projid>/proj-shared/...) — the 2B tipsy and all job
   stdout live there; it is PURGED (~90 days), so treat it as scratch
   and copy keeper results off.
+- Exception (2026-11-15): the multi-node Charm++ test tier runs from a
+  Lustre copy of the tree, not from /ccs/proj (NFS). See "Run the
+  multi-node tier from Lustre" in the site-run section.
 - Results back to the laptop: small logs — paste or one scp per
   harvest (one MFA each); bulk (traces) — Globus (authenticate once in
   the browser, transfers then run unattended).
@@ -144,6 +147,12 @@ adapt the srun line verbatim from Ritvik's recorded command
 (cray_shasta, job_vni, pemap, +lci_ndevices 7 = his min(8, ppn/2)
 setting on Slingshot, CXI env vars).
 
+`sbatch` copies the script at submit time (2026-11-15). Editing the file
+of a job that is already queued changes nothing about what that job runs:
+in the beta1 campaign two queued scripts were edited to move their runs to
+the Lustre tree, the jobs ran the original text on NFS, and one had to be
+resubmitted. To change a queued job, cancel and resubmit it.
+
 ### `module` does not exist in a batch script — source lmod first (2026-09-01)
 
 A `#!/bin/bash` sbatch script runs as a NON-LOGIN shell, and on Frontier the
@@ -170,6 +179,13 @@ The gate is what turns the next occurrence of this class of failure into a
 one-line abort instead of a full job of loader errors. `#!/bin/bash -l` is
 the other conventional fix but changes the whole environment; sourcing the
 init is the minimal one.
+
+ROCm module (2026-11-15, Core/26.05 stack): `rocm/6.2.4` exports
+`ROCM_PATH=/opt/rocm-6.2.4` itself and provides no `OLCF_ROCM_ROOT`. Do not
+override ROCM_PATH after loading it: a script line
+`export ROCM_PATH=$OLCF_ROCM_ROOT` sets it to the empty string, and a HIP
+build (`./build charm++ reconverse-linux-x86_64 amd ...`) configured that way
+had to be stopped and rebuilt with `--force` (beta1 campaign, build G).
 
 ## CPU affinity at run time — the flags, and the OS-index trap (2026-08-29)
 
@@ -616,7 +632,7 @@ project home area, per the Layout section, not Lustre:
     git clone --branch recharm --recurse-submodules \
         https://github.com/charmplusplus/charm charm-siterun && cd charm-siterun
     source /opt/cray/pe/lmod/lmod/init/bash      # `module` is undefined in scripts
-    module load PrgEnv-gnu cmake hwloc python    # gcc 13.2, cmake 3.30.5, hwloc 2.11.1, python 3.13
+    module load PrgEnv-gnu cmake hwloc python    # module versions: gcc-native 13.2, cmake 3.30.5, hwloc 2.11.1, python 3.13
     ./build charm++ reconverse-linux-x86_64 --with-production -j8 \
         --with-cmake-args="-DHWLOC_ROOT_DIR=$OLCF_HWLOC_ROOT -DRECONVERSE_ENABLE_CPU_AFFINITY=ON"
 
@@ -625,6 +641,24 @@ outbound https works). Gates that passed: `RECONVERSE_ENABLE_CPU_AFFINITY:BOOL=O
 `HWLOC_ROOT_DIR` = the module's prefix, `CMAKE_BUILD_TYPE=Release`,
 `include/conv-mach-opt.sh` has `CMK_RECONVERSE="1"` (so `bin/testrun` uses the
 reconverse launch idiom). The tree is 527 MB built.
+
+CORRECTED 2026-11-15: the "gcc 13.2" above is the module, not what the build
+used. With no compiler on the `./build` line, CMake picks the system compilers
+(`/usr/bin/c++`, `/usr/bin/gfortran`, "The CXX compiler identification is GNU
+7.5.0"), so libreconverse, LCI and libccs-client are compiled by gcc 7.5,
+while charmc compiles libck.a, the AMPI Fortran objects and every application
+with the gcc-native 13 `g++`/`gfortran` first on PATH. Name the compilers on
+the build line to get GNU 13 for every piece (verified, beta1 build D:
+identification GNU 13.3.1 for C, C++ and Fortran,
+`CMAKE_CXX_COMPILER=/opt/cray/pe/gcc-native/13/bin/g++`, build directory
+`reconverse-linux-x86_64-gcc-gfortran`):
+
+    ./build LIBS reconverse-linux-x86_64 gcc gfortran --with-production -j8 \
+        --with-cmake-args="-DHWLOC_ROOT_DIR=$OLCF_HWLOC_ROOT -DRECONVERSE_ENABLE_CPU_AFFINITY=ON"
+
+Gate on `grep 'CXX compiler identification' <build log>`. Nothing in the
+beta1 campaign failed because of the mixed build (the pieglobals-f90 exit
+abort, charm #4157, reproduced identically with GNU 13 throughout).
 
 ### The sbatch recipe that works
 
@@ -652,6 +686,25 @@ is +p6; large_bcast's +p10 is only in its test-bench target).
 Do not run two instances against one tree at once: each directory's
 `site-*.out` and build products are shared. Queue the second job with
 `--dependency=afterany:<first>`.
+
+### Run the multi-node tier from Lustre, not /ccs/proj (2026-11-15)
+
+CORRECTION to the recipe above (`cd /ccs/proj/...`), for runs on more than
+one node. Several test Makefiles `rm -rf` a checkpoint or map directory in the
+shell on the batch host, and the next `srun -N1` step lands on the OTHER node
+(Slurm alternated nodes in every probe). That node's NFS client still holds
+the deleted directory: `mkdir` succeeds against the stale entry and every open
+then fails with ENOENT ("failed to open checkpoint file: ckptlog/RO.dat, mode:
+wb"; megatest "Simple1DFileMap failed to open file named 'mapfile'"). Direct
+repro (job 5924971: checkpoint on node 2, `rm -rf` on node 1, checkpoint on
+node 2 again): NFS 1/10 succeed, Lustre 10/10. The beta1 campaign's 8
+stale-NFS cells disappeared when the same tier ran from Lustre.
+
+Recipe: rsync the source tree to `/lustre/orion/csc710/proj-shared/$USER/...`
+without `.git` and the build directories, point its `bin`, `lib`, `include`
+and `tmp` links at the build (which stays on /ccs/proj), and run the site
+script there. Those four links follow the LAST build made in a tree, so
+repoint them in every job when one tree holds several builds.
 
 ### Launcher facts, all measured in-job with simplearrayhello (+pe 4)
 
@@ -747,6 +800,10 @@ Source: `~/software/changaCache/baselines/frontier/frontierReport1/REPORT.md`
 - The Delta cxi settings `FI_MR_CACHE_MONITOR=userfaultfd
   FI_CXI_RX_MATCH_MODE=hybrid` were set on every Frontier job and caused no
   problem; whether Frontier needs them was not tested.
+  UPDATED 2026-11-15: the site environment sets `FI_MR_CACHE_MONITOR=kdreg2`
+  by default, so a job that does not set it runs kdreg2, not libfabric's
+  built-in default. kdreg2 is slow on some large-message patterns; see
+  "Large messages: the kdreg2 default and zerocopy" below.
 - 56-PE core map for ChaNGa (core 0 of each 8-core L3 group is reserved):
   `+pemap 1-7,9-15,17-23,25-31,33-39,41-47,49-55,57-63` with
   `srun --cpu-bind=none -c $((56 / procs_per_node))`.
@@ -880,6 +937,11 @@ Shape sweep, 8 nodes, 80M particles, -p 14336, medians of 2 reps, `+setcpuaffini
   spanning all four domains aborts in `MPI_Init` with "Unable to use a NIC_POLICY of 'NUMA'. Rank N is not
   confined to a single NUMA node". Set `MPICH_OFI_NIC_POLICY=ROUND-ROBIN` for that shape. At 4 per node the
   policy makes no measurable difference (182.5 s NUMA against 190.3 s round-robin).
+  EXTENDED 2026-11-15: any run with `SLURM_CPU_BIND=none` (no Slurm binding) needs
+  `MPICH_OFI_NIC_POLICY=ROUND-ROBIN` at ANY number of processes per node, not only one: the beta1 MPI-interop
+  job (charm on reconverse with Cray MPICH 9.1.0, 2 nodes x 2 processes) aborted in `MPI_Init` with the same
+  message ("Rank 0 is not confined to a single NUMA node") and passed with the variable set (jobs 5924864,
+  5925091). The 4-per-node runs above used `--cpu-bind=cores`, which confines each rank to one domain.
 - Slurm's `--cpu-bind=cores -c $((56/ppn))` already hands rank r exactly NUMA domain r
   (1-15, 17-31, 33-47, 49-63 for 4 per node). No manual map is needed or wanted; see the affinity trap below.
 
@@ -892,6 +954,8 @@ limit IN PLACE, no cancel and the same job id, got it running within minutes:
 
 Slurm lets a user lower a job's time limit but not raise it. Ask for what the work needs: an oversized `-t`
 costs backfill opportunities, and on this machine that cost hours rather than minutes.
+Seen again 2026-11-15 at 16 nodes: a job about 2 h behind higher-priority work started within the hour after
+`scontrol update JobId=<id> TimeLimit=00:20:00` (from 30 min).
 
 
 ## Two affinity traps that cost a 10x and a 40x misconfiguration (2026-09-28)
@@ -948,3 +1012,18 @@ Slurm the prefix goes INSIDE the launch, after srun's arguments: `srun ... setar
 starts the tasks, so `setarch -R srun ...` sets the flag on srun only and the tasks run randomized. As of charm branch
 `reconverse-launch-setarch` (2026-10-28), `testrun` (every `make test`, including `TESTRUN_LAUNCHER`) and `ampirun`
 add the prefix automatically on Linux; opt out with `TESTRUN_VA_RANDOMIZATION=1` / `AMPIRUN_VA_RANDOMIZATION=1`.
+
+## Large messages: the kdreg2 default and zerocopy (2026-11-15)
+
+The site environment sets `FI_MR_CACHE_MONITOR=kdreg2` and `FI_CXI_ATS=0` for every job (printed in each
+beta1 job's provenance block; the job scripts set neither). So "do not set FI_MR_CACHE_MONITOR" means kdreg2.
+Measured with `benchmarks/charm++/pingpong`, 2 nodes x 1 process, `+pe 2`, charm `db8320b08`, reconverse
+`bbb92e1`, medians of 5 interleaved repeats (job 5926152): at 16 MB the "Groups (1 KB pipe, no memcpy, no
+allocs)" phase takes 169651 us under kdreg2 against 46242 us under `userfaultfd` and 46073 us under
+`memhooks`, and the 2 KB pipe phase 147130 against 23948 and 23877 us: kdreg2 is 3.7-6.2x slower on these
+pipelined phases, which send many small pieces of one large registered buffer. At 1 MB the same phases differ
+by 3%. Measure with `FI_MR_CACHE_MONITOR=userfaultfd` before attributing large-message cost to Charm++.
+
+Zerocopy on Frontier (same runs): the zerocopy API is 3.6x slower than plain messages at 16 MB between two
+nodes, and no tested configuration (`+lci_ndevices 2`, userfaultfd, memhooks) changes that, while Anvil (8%)
+and Delta (about parity) do not show the gap. Tracked in charm issue #4270.
