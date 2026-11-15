@@ -19,7 +19,12 @@ inspection on the machine, not inferred.
   (Verified on a compute node via `srun ... lscpu`. Note the LOGIN nodes are
   different hardware — EPYC 7543, 32 cores, 4 NUMA domains — so never read
   topology, core counts, or timings from a login node.)
-- Network: Mellanox InfiniBand HDR, one HCA per node (`mlx5_0`).
+- Network: Mellanox InfiniBand **HDR100** (`ibstat` Rate 100 on compute nodes a399/a409,
+  2026-11-15), one HCA per node (`mlx5_0`): **12.5 GB/s per direction** on the wire; a
+  cross-node bandwidth above ~12.4 GB/s (ib_write_bw and osu_bw measured 12.3) is a benchmark
+  defect. The HCA sits on **NUMA node 2 (cores 32-47)**, so latency work should pin to cores
+  32-47; pinning to cores 0-1 crosses NUMA domains on every message (2026-11-15 commperf
+  baseline, job 22239420).
   `/usr/include/infiniband/verbs.h` and libibverbs are present, so
   ibverbs microbenchmarks can be built directly.
 
