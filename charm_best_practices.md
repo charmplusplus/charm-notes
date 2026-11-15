@@ -3808,3 +3808,21 @@ that ack (hang; fixed by PR #4273, which sends along the tree the acks are
 counted on). It showed only when the tree has an intermediate node (2+ hosts
 x 2+ processes, or 6+ processes); CI's 1-2 process runs never build one.
 Test protocol code at a process count that gives the tree depth it needs.
+
+## Coverage profiles from aborting runs: one profile runtime per image (2026-11-14, Mac + Linux)
+
+A clang `-fprofile-instr-generate` program built from several instrumented
+images (the executable with libck.a, libreconverse.dylib/.so, LCI's
+libraries) carries a separate, PRIVATE copy of the profile runtime in each
+image: `nm -m` shows `___llvm_profile_write_file` as "non-external (was a
+private external)" in each. A normal exit writes one .profraw per image
+(use `%m` in LLVM_PROFILE_FILE); `abort()` writes none. Calling
+`__llvm_profile_write_file()` from one image writes only that image's
+counters. Since charm #4263 / reconverse #328, CmiAbort runs the functions
+registered with `CmiRegisterAbortFlush` once per process before the abort
+hook, and charm's coverage build registers the executable's writer from a
+static initializer in init.C; LCI's libraries are still not written on
+abort, and peers killed by the launcher write nothing. A weak undefined
+reference is not an option on Mach-O (the link fails), so the call is
+compiled only under a coverage macro. Also: `charmc -seq` links read
+CMK_SEQ_LD(XX)_FLAGS directly, not CMK_LD(XX)_FLAGS (#4262).
