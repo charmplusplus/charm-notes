@@ -3826,3 +3826,32 @@ abort, and peers killed by the launcher write nothing. A weak undefined
 reference is not an option on Mach-O (the link fails), so the call is
 compiled only under a coverage macro. Also: `charmc -seq` links read
 CMK_SEQ_LD(XX)_FLAGS directly, not CMK_LD(XX)_FLAGS (#4262).
+
+## Worktrees of a clone with submodules: no `commit -a`, and removal needs a manual step (2026-11-13, AMPI #4247)
+`git commit -a` (or `-am`) in a worktree records the submodule's CHECKED-OUT
+commit, and a worktree's `contrib/reconverse` checkout is often behind or
+ahead of the pointer in the branch after a rebase. A one-line Fortran fix
+committed with `-am` silently moved the reconverse pointer; the Anvil test
+agent caught it from the diff. Add files explicitly, and after every rebase
+run `git submodule update contrib/reconverse` and check
+`git diff origin/<base> HEAD --stat` (commits only) rather than
+`git diff origin/<base> --stat` (which also shows the checkout). Removing such
+a worktree: `git worktree remove` refuses ("working trees containing
+submodules cannot be moved or removed"); with `--force` git deregisters it
+but leaves the directory ("Directory not empty"), so finish with `rm -rf
+<dir>` and `git worktree prune`, after checking `git status --porcelain` is
+empty.
+
+## TCharm's per-rank clock offset (MPI_Wtime) must be pupped on every migration path (2026-11-13, charm #4259)
+`TCHARM_Wall_timer()` (AMPI's `MPI_Wtime`) is `CkWallTimer() + timeOffset`;
+the offset keeps a rank's clock from going backwards when it moves to a
+processor whose clock reads lower (reconverse sets each process's start time
+after a barrier, so clocks differ by small amounts; `MPI_WTIME_IS_GLOBAL` is
+0). The campi pup path skipped the offset and the migration constructor left
+it uninitialized, so campi ranks moved by GreedyLB reported NaN or 0 times on
+Anvil. Fix: `TCharm::pupClock` packs `CkWallTimer()+timeOffset` and on arrival
+sets `timeOffset = max(0, packTime - CkWallTimer())`, called from both thread
+and campi pup paths. Lesson: per-object state that a pup routine handles in
+one branch must be handled in every branch; tests/ampi/migration and
+tests/campi/migrate now check that `MPI_Wtime` does not go backwards across a
+move.
