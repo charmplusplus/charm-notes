@@ -582,6 +582,16 @@ started). Declare `-n` and `--cpus-per-task` in the `#SBATCH` header (or
 `--exclusive`); on `wholenode`/`standard` this doesn't arise because
 allocation is whole-node.
 
+### `srun -c N` confines the step to N CPUs, so an explicit `+pemap` outside them aborts (2026-11-15)
+
+On current Slurm, `--cpus-per-task` on `srun` implies `--exact`: the step's cpuset holds only the N
+CPUs Slurm picked (usually the lowest-numbered), even inside an exclusive allocation. A one-process
+run `srun -N1 -n1 -c2 ./app +pe 2 +pemap 32,33` then aborts at startup with `CmiSetCPUAffinity
+failed`, because cores 32 and 33 are not in the step (commperf smoke job 22242047). Either give the
+step the cores you mean (`--cpu-bind=map_cpu:32` with `-c` omitted, or `-c` large enough to include
+them with `--cpu-bind=none`), or leave `+pemap` to cores inside the step. Check with
+`+showcpuaffinity`.
+
 ### An sbatch `--cpus-per-task` leaks into every inner `srun` (2026-09-12)
 
 A job script that declares `#SBATCH --cpus-per-task=N` gets
